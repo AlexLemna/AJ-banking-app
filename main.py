@@ -5,6 +5,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date
 from functools import wraps
 from sqlalchemy import func
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import ClassVar
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
@@ -13,70 +17,84 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
-login_manager.login_view = 'login'
+login_manager.login_view = 'login'  # type: ignore
 
 # Database Models
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), nullable=False)  # 'parent' or 'child'
-    chore_submissions = db.relationship('ChoreSubmission', backref='user', lazy=True)
+class User(UserMixin, db.Model):  # type: ignore[name-defined]
+    __tablename__ = 'user'
+    id: int = db.Column(db.Integer, primary_key=True)  # type: ignore
+    username: str = db.Column(db.String(80), unique=True, nullable=False)  # type: ignore
+    password_hash: str = db.Column(db.String(255), nullable=False)  # type: ignore
+    role: str = db.Column(db.String(20), nullable=False)  # type: ignore
+    chore_submissions = db.relationship('ChoreSubmission', backref='user', lazy=True)  # type: ignore
     
-    def set_password(self, password):
+    def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
     
-    def check_password(self, password):
+    def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
 
-class ChoreType(db.Model):
+class ChoreType(db.Model):  # type: ignore[name-defined]
     """Template for chores that can be submitted - defined by parent"""
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.String(500), nullable=False)
-    value = db.Column(db.Float, nullable=False)
+    __tablename__ = 'chore_type'
+    id: int = db.Column(db.Integer, primary_key=True)  # type: ignore
+    name: str = db.Column(db.String(100), nullable=False)  # type: ignore
+    description: str = db.Column(db.String(500), nullable=False)  # type: ignore
+    value: float = db.Column(db.Float, nullable=False)  # type: ignore
     # Daily limits for each day of week (0 = unlimited)
-    sunday_limit = db.Column(db.Integer, nullable=False, default=1)
-    monday_limit = db.Column(db.Integer, nullable=False, default=1)
-    tuesday_limit = db.Column(db.Integer, nullable=False, default=1)
-    wednesday_limit = db.Column(db.Integer, nullable=False, default=1)
-    thursday_limit = db.Column(db.Integer, nullable=False, default=1)
-    friday_limit = db.Column(db.Integer, nullable=False, default=1)
-    saturday_limit = db.Column(db.Integer, nullable=False, default=1)
-    active = db.Column(db.Boolean, nullable=False, default=True)
-    date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    submissions = db.relationship('ChoreSubmission', backref='chore_type', lazy=True)
+    sunday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    monday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    tuesday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    wednesday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    thursday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    friday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    saturday_limit: int = db.Column(db.Integer, nullable=False, default=1)  # type: ignore
+    active: bool = db.Column(db.Boolean, nullable=False, default=True)  # type: ignore
+    date_created: datetime = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # type: ignore
+    submissions = db.relationship('ChoreSubmission', backref='chore_type', lazy=True)  # type: ignore
     
-    def get_limit_for_day(self, day_of_week):
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
+    
+    def get_limit_for_day(self, day_of_week: int) -> int:
         """Get limit for a specific day (0=Sunday, 6=Saturday)"""
         limits = [self.sunday_limit, self.monday_limit, self.tuesday_limit, 
                  self.wednesday_limit, self.thursday_limit, self.friday_limit, self.saturday_limit]
         return limits[day_of_week]
     
-    def get_day_abbreviations(self):
+    def get_day_abbreviations(self) -> str:
         """Return string like 'SMTWThFS' based on which days have limits > 0"""
         days = ['S', 'M', 'T', 'W', 'Th', 'F', 'S']
         limits = [self.sunday_limit, self.monday_limit, self.tuesday_limit,
                  self.wednesday_limit, self.thursday_limit, self.friday_limit, self.saturday_limit]
         return ''.join(day for day, limit in zip(days, limits) if limit > 0)
 
-class ChoreSubmission(db.Model):
+class ChoreSubmission(db.Model):  # type: ignore[name-defined]
     """Instance of a chore completed by child - awaiting approval"""
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    chore_type_id = db.Column(db.Integer, db.ForeignKey('chore_type.id'), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='pending')  # 'pending' or 'approved'
-    date_submitted = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    date_approved = db.Column(db.DateTime)
-    notes = db.Column(db.String(500))  # Optional notes from child
+    __tablename__ = 'chore_submission'
+    id: int = db.Column(db.Integer, primary_key=True)  # type: ignore
+    user_id: int = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # type: ignore
+    chore_type_id: int = db.Column(db.Integer, db.ForeignKey('chore_type.id'), nullable=False)  # type: ignore
+    status: str = db.Column(db.String(20), nullable=False, default='pending')  # type: ignore
+    date_submitted: datetime = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # type: ignore
+    date_approved: Optional[datetime] = db.Column(db.DateTime)  # type: ignore
+    notes: Optional[str] = db.Column(db.String(500))  # type: ignore
+    # Relationships populated by backrefs (not actual columns, no type annotation needed)
+    
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
 
-class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    type = db.Column(db.String(20), nullable=False)  # 'chore', 'fine', 'payment'
-    description = db.Column(db.String(200), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+class Transaction(db.Model):  # type: ignore[name-defined]
+    __tablename__ = 'transaction'
+    id: int = db.Column(db.Integer, primary_key=True)  # type: ignore
+    user_id: int = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # type: ignore
+    type: str = db.Column(db.String(20), nullable=False)  # type: ignore
+    description: str = db.Column(db.String(200), nullable=False)  # type: ignore
+    amount: float = db.Column(db.Float, nullable=False)  # type: ignore
+    date: datetime = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # type: ignore
+    
+    def __init__(self, **kwargs) -> None:  # type: ignore
+        super().__init__(**kwargs)
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -144,7 +162,7 @@ def child_dashboard():
     chore_types = ChoreType.query.filter_by(active=True).order_by(ChoreType.name).all()
     
     # Get all submissions for this child
-    submissions = ChoreSubmission.query.filter_by(user_id=current_user.id).order_by(ChoreSubmission.date_submitted.desc()).all()
+    submissions = ChoreSubmission.query.filter_by(user_id=current_user.id).order_by(ChoreSubmission.date_submitted.desc()).all()  # type: ignore[attr-defined]
     
     # Calculate earnings
     pending_earnings = sum(sub.chore_type.value for sub in submissions if sub.status == 'pending')
@@ -258,13 +276,13 @@ def parent_dashboard():
     pending_submissions = ChoreSubmission.query.filter_by(
         user_id=child.id, 
         status='pending'
-    ).order_by(ChoreSubmission.date_submitted.desc()).all()
+    ).order_by(ChoreSubmission.date_submitted.desc()).all()  # type: ignore[attr-defined]
     
     # Get approved submissions
     approved_submissions = ChoreSubmission.query.filter_by(
         user_id=child.id,
         status='approved'
-    ).order_by(ChoreSubmission.date_approved.desc()).limit(20).all()
+    ).order_by(ChoreSubmission.date_approved.desc()).limit(20).all()  # type: ignore[attr-defined]
     
     # Calculate balances
     all_approved = ChoreSubmission.query.filter_by(user_id=child.id, status='approved').all()
@@ -279,7 +297,7 @@ def parent_dashboard():
     total_payments = sum(payment.amount for payment in payments)
     
     # Get all transactions for history
-    transactions = Transaction.query.filter_by(user_id=child.id).order_by(Transaction.date.desc()).all()
+    transactions = Transaction.query.filter_by(user_id=child.id).order_by(Transaction.date.desc()).all()  # type: ignore[attr-defined]
     
     current_balance = approved_earnings - total_fines - total_payments
     
@@ -311,13 +329,13 @@ def add_chore_type():
     value = request.form.get('value')
     
     # Get day limits
-    sunday = int(request.form.get('sunday', 0))
-    monday = int(request.form.get('monday', 0))
-    tuesday = int(request.form.get('tuesday', 0))
-    wednesday = int(request.form.get('wednesday', 0))
-    thursday = int(request.form.get('thursday', 0))
-    friday = int(request.form.get('friday', 0))
-    saturday = int(request.form.get('saturday', 0))
+    sunday = int(request.form.get('sunday', '0'))
+    monday = int(request.form.get('monday', '0'))
+    tuesday = int(request.form.get('tuesday', '0'))
+    wednesday = int(request.form.get('wednesday', '0'))
+    thursday = int(request.form.get('thursday', '0'))
+    friday = int(request.form.get('friday', '0'))
+    saturday = int(request.form.get('saturday', '0'))
     
     if not all([name, description, value]):
         flash('Please fill all required fields')
@@ -327,7 +345,7 @@ def add_chore_type():
         chore_type = ChoreType(
             name=name,
             description=description,
-            value=float(value),
+            value=float(value),  # type: ignore[arg-type]  # Already checked value is not None above
             sunday_limit=sunday,
             monday_limit=monday,
             tuesday_limit=tuesday,
