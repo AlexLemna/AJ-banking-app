@@ -17,26 +17,35 @@
     </div>
 </div>
 
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('manage_chore_types') }}" class="btn btn-primary">Manage Chore Types</a>
+</div>
+
 <div class="card">
     <h2>Pending Chores (Need Approval)</h2>
-    {% if pending_chores %}
+    {% if pending_submissions %}
     <table>
         <thead>
             <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Amount</th>
+                <th>Date Submitted</th>
+                <th>Chore</th>
+                <th>Value</th>
+                <th>Notes</th>
                 <th>Action</th>
             </tr>
         </thead>
         <tbody>
-            {% for chore in pending_chores %}
+            {% for submission in pending_submissions %}
             <tr>
-                <td>{{ chore.date_created.strftime('%m/%d/%Y') }}</td>
-                <td>{{ chore.description }}</td>
-                <td>${{ "%.2f"|format(chore.amount) }}</td>
+                <td>{{ submission.date_submitted.strftime('%m/%d/%Y %H:%M') }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('approve_chore', chore_id=chore.id) }}"
+                    <strong>{{ submission.chore_type.name }}</strong><br>
+                    <small style="color: #666;">{{ submission.chore_type.description }}</small>
+                </td>
+                <td>${{ "%.2f"|format(submission.chore_type.value) }}</td>
+                <td>{{ submission.notes if submission.notes else '-' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('approve_submission', submission_id=submission.id) }}"
                         style="display: inline;">
                         <button type="submit" class="btn btn-success">Approve</button>
                     </form>
@@ -80,24 +89,24 @@
 </div>
 
 <div class="card">
-    <h2>Approved Chores</h2>
-    {% if approved_chores %}
+    <h2>Recently Approved Chores</h2>
+    {% if approved_submissions %}
     <table>
         <thead>
             <tr>
-                <th>Date Completed</th>
+                <th>Date Submitted</th>
                 <th>Date Approved</th>
-                <th>Description</th>
-                <th>Amount</th>
+                <th>Chore</th>
+                <th>Value</th>
             </tr>
         </thead>
         <tbody>
-            {% for chore in approved_chores %}
+            {% for submission in approved_submissions %}
             <tr>
-                <td>{{ chore.date_created.strftime('%m/%d/%Y') }}</td>
-                <td>{{ chore.date_approved.strftime('%m/%d/%Y') if chore.date_approved else 'N/A' }}</td>
-                <td>{{ chore.description }}</td>
-                <td>${{ "%.2f"|format(chore.amount) }}</td>
+                <td>{{ submission.date_submitted.strftime('%m/%d/%Y') }}</td>
+                <td>{{ submission.date_approved.strftime('%m/%d/%Y') if submission.date_approved else 'N/A' }}</td>
+                <td>{{ submission.chore_type.name }}</td>
+                <td>${{ "%.2f"|format(submission.chore_type.value) }}</td>
             </tr>
             {% endfor %}
         </tbody>

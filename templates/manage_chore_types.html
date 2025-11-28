@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Chore Types{% endblock %}
+
+{% block header %}Manage Chore Types{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('parent_dashboard') }}" class="btn btn-primary">← Back to Dashboard</a>
+</div>
+
+<div class="card">
+    <h2>Add New Chore Type</h2>
+    <form method="POST" action="{{ url_for('add_chore_type') }}">
+        <div class="form-group">
+            <label for="name">Chore Name *</label>
+            <input type="text" id="name" name="name" placeholder="e.g., Clean Room" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description *</label>
+            <textarea id="description" name="description" rows="3" placeholder="What does this chore involve?" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 1em;"></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="value">Value ($) *</label>
+            <input type="number" id="value" name="value" step="0.01" min="0" placeholder="5.00" required>
+        </div>
+        
+        <div class="form-group">
+            <label>Daily Submission Limits (0 = unlimited)</label>
+            <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-top: 10px;">
+                <div>
+                    <label for="sunday" style="font-size: 0.9em;">Sun</label>
+                    <input type="number" id="sunday" name="sunday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="monday" style="font-size: 0.9em;">Mon</label>
+                    <input type="number" id="monday" name="monday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="tuesday" style="font-size: 0.9em;">Tue</label>
+                    <input type="number" id="tuesday" name="tuesday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="wednesday" style="font-size: 0.9em;">Wed</label>
+                    <input type="number" id="wednesday" name="wednesday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="thursday" style="font-size: 0.9em;">Thu</label>
+                    <input type="number" id="thursday" name="thursday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="friday" style="font-size: 0.9em;">Fri</label>
+                    <input type="number" id="friday" name="friday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+                <div>
+                    <label for="saturday" style="font-size: 0.9em;">Sat</label>
+                    <input type="number" id="saturday" name="saturday" min="0" value="1" style="width: 100%; padding: 8px;">
+                </div>
+            </div>
+            <small style="color: #666; margin-top: 5px; display: block;">Set to 0 for unlimited submissions on that day, or set to 0 to disable for that day.</small>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Create Chore Type</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Existing Chore Types</h2>
+    {% if chore_types %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Value</th>
+                <th>Days (Limits)</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chore_type in chore_types %}
+            <tr style="{% if not chore_type.active %}opacity: 0.6;{% endif %}">
+                <td><strong>{{ chore_type.name }}</strong></td>
+                <td>{{ chore_type.description }}</td>
+                <td>${{ "%.2f"|format(chore_type.value) }}</td>
+                <td>
+                    <small>
+                        {% if chore_type.sunday_limit > 0 %}S({{ chore_type.sunday_limit }}) {% endif %}
+                        {% if chore_type.monday_limit > 0 %}M({{ chore_type.monday_limit }}) {% endif %}
+                        {% if chore_type.tuesday_limit > 0 %}T({{ chore_type.tuesday_limit }}) {% endif %}
+                        {% if chore_type.wednesday_limit > 0 %}W({{ chore_type.wednesday_limit }}) {% endif %}
+                        {% if chore_type.thursday_limit > 0 %}Th({{ chore_type.thursday_limit }}) {% endif %}
+                        {% if chore_type.friday_limit > 0 %}F({{ chore_type.friday_limit }}) {% endif %}
+                        {% if chore_type.saturday_limit > 0 %}S({{ chore_type.saturday_limit }}) {% endif %}
+                    </small>
+                </td>
+                <td>
+                    {% if chore_type.active %}
+                        <span style="color: #28a745;">● Active</span>
+                    {% else %}
+                        <span style="color: #dc3545;">● Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('toggle_chore_type', chore_type_id=chore_type.id) }}" style="display: inline;">
+                        <button type="submit" class="btn {% if chore_type.active %}btn-danger{% else %}btn-success{% endif %}" style="padding: 5px 10px; font-size: 0.9em;">
+                            {% if chore_type.active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                    <button onclick="toggleEdit({{ chore_type.id }})" class="btn btn-primary" style="padding: 5px 10px; font-size: 0.9em;">Edit</button>
+                </td>
+            </tr>
+            <tr id="edit-{{ chore_type.id }}" style="display: none;">
+                <td colspan="6">
+                    <form method="POST" action="{{ url_for('edit_chore_type', chore_type_id=chore_type.id) }}" style="padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <h3 style="margin-top: 0;">Edit: {{ chore_type.name }}</h3>
+                        <div class="form-group">
+                            <label>Chore Name</label>
+                            <input type="text" name="name" value="{{ chore_type.name }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="description" rows="2" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">{{ chore_type.description }}</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Value ($)</label>
+                            <input type="number" name="value" step="0.01" min="0" value="{{ chore_type.value }}" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Daily Limits</label>
+                            <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;">
+                                <div><label style="font-size: 0.8em;">Sun</label><input type="number" name="sunday" min="0" value="{{ chore_type.sunday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Mon</label><input type="number" name="monday" min="0" value="{{ chore_type.monday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Tue</label><input type="number" name="tuesday" min="0" value="{{ chore_type.tuesday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Wed</label><input type="number" name="wednesday" min="0" value="{{ chore_type.wednesday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Thu</label><input type="number" name="thursday" min="0" value="{{ chore_type.thursday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Fri</label><input type="number" name="friday" min="0" value="{{ chore_type.friday_limit }}" style="width: 100%; padding: 5px;"></div>
+                                <div><label style="font-size: 0.8em;">Sat</label><input type="number" name="saturday" min="0" value="{{ chore_type.saturday_limit }}" style="width: 100%; padding: 5px;"></div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success">Save Changes</button>
+                        <button type="button" onclick="toggleEdit({{ chore_type.id }})" class="btn" style="background: #6c757d; color: white;">Cancel</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No chore types created yet. Add one above to get started!</p>
+    {% endif %}
+</div>
+
+<script>
+function toggleEdit(choreTypeId) {
+    var editRow = document.getElementById('edit-' + choreTypeId);
+    if (editRow.style.display === 'none') {
+        editRow.style.display = 'table-row';
+    } else {
+        editRow.style.display = 'none';
+    }
+}
+</script>
+{% endblock %}

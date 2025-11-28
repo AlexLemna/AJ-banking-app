@@ -2,8 +2,9 @@ from flask import Flask, render_template, redirect, url_for, request, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, date
 from functools import wraps
+from sqlalchemy import func
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
@@ -20,7 +21,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False)  # 'parent' or 'child'
-    chores = db.relationship('Chore', backref='user', lazy=True)
+    chore_submissions = db.relationship('ChoreSubmission', backref='user', lazy=True)
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -28,14 +29,46 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-class Chore(db.Model):
+class ChoreType(db.Model):
+    """Template for chores that can be submitted - defined by parent"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(500), nullable=False)
+    value = db.Column(db.Float, nullable=False)
+    # Daily limits for each day of week (0 = unlimited)
+    sunday_limit = db.Column(db.Integer, nullable=False, default=1)
+    monday_limit = db.Column(db.Integer, nullable=False, default=1)
+    tuesday_limit = db.Column(db.Integer, nullable=False, default=1)
+    wednesday_limit = db.Column(db.Integer, nullable=False, default=1)
+    thursday_limit = db.Column(db.Integer, nullable=False, default=1)
+    friday_limit = db.Column(db.Integer, nullable=False, default=1)
+    saturday_limit = db.Column(db.Integer, nullable=False, default=1)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    submissions = db.relationship('ChoreSubmission', backref='chore_type', lazy=True)
+    
+    def get_limit_for_day(self, day_of_week):
+        """Get limit for a specific day (0=Sunday, 6=Saturday)"""
+        limits = [self.sunday_limit, self.monday_limit, self.tuesday_limit, 
+                 self.wednesday_limit, self.thursday_limit, self.friday_limit, self.saturday_limit]
+        return limits[day_of_week]
+    
+    def get_day_abbreviations(self):
+        """Return string like 'SMTWThFS' based on which days have limits > 0"""
+        days = ['S', 'M', 'T', 'W', 'Th', 'F', 'S']
+        limits = [self.sunday_limit, self.monday_limit, self.tuesday_limit,
+                 self.wednesday_limit, self.thursday_limit, self.friday_limit, self.saturday_limit]
+        return ''.join(day for day, limit in zip(days, limits) if limit > 0)
+
+class ChoreSubmission(db.Model):
+    """Instance of a chore completed by child - awaiting approval"""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    description = db.Column(db.String(200), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    chore_type_id = db.Column(db.Integer, db.ForeignKey('chore_type.id'), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='pending')  # 'pending' or 'approved'
-    date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    date_submitted = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     date_approved = db.Column(db.DateTime)
+    notes = db.Column(db.String(500))  # Optional notes from child
 
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -107,9 +140,15 @@ def logout():
 @login_required
 @child_required
 def child_dashboard():
-    chores = Chore.query.filter_by(user_id=current_user.id).order_by(Chore.date_created.desc()).all()
-    pending_earnings = sum(chore.amount for chore in chores if chore.status == 'pending')
-    approved_earnings = sum(chore.amount for chore in chores if chore.status == 'approved')
+    # Get all active chore types
+    chore_types = ChoreType.query.filter_by(active=True).order_by(ChoreType.name).all()
+    
+    # Get all submissions for this child
+    submissions = ChoreSubmission.query.filter_by(user_id=current_user.id).order_by(ChoreSubmission.date_submitted.desc()).all()
+    
+    # Calculate earnings
+    pending_earnings = sum(sub.chore_type.value for sub in submissions if sub.status == 'pending')
+    approved_earnings = sum(sub.chore_type.value for sub in submissions if sub.status == 'approved')
     
     # Get fines
     fines = Transaction.query.filter_by(user_id=current_user.id, type='fine').all()
@@ -121,31 +160,86 @@ def child_dashboard():
     
     balance = approved_earnings - total_fines - total_payments
     
+    # Get today's date for checking limits
+    today = date.today()
+    today_weekday = today.weekday()  # 0=Monday in Python
+    # Convert to 0=Sunday for our database
+    db_weekday = (today_weekday + 1) % 7
+    
+    # For each chore type, check how many times submitted today
+    chore_availability = {}
+    for chore_type in chore_types:
+        today_submissions = ChoreSubmission.query.filter(
+            ChoreSubmission.user_id == current_user.id,
+            ChoreSubmission.chore_type_id == chore_type.id,
+            func.date(ChoreSubmission.date_submitted) == today
+        ).count()
+        
+        limit = chore_type.get_limit_for_day(db_weekday)
+        can_submit = limit == 0 or today_submissions < limit  # 0 = unlimited
+        remaining = None if limit == 0 else max(0, limit - today_submissions)
+        
+        chore_availability[chore_type.id] = {
+            'can_submit': can_submit,
+            'today_count': today_submissions,
+            'limit': limit,
+            'remaining': remaining
+        }
+    
     return render_template('child_dashboard.html', 
-                         chores=chores, 
+                         chore_types=chore_types,
+                         submissions=submissions,
                          pending_earnings=pending_earnings,
                          approved_earnings=approved_earnings,
                          total_fines=total_fines,
-                         balance=balance)
+                         balance=balance,
+                         chore_availability=chore_availability)
 
-@app.route('/child/add_chore', methods=['POST'])
+@app.route('/child/submit_chore', methods=['POST'])
 @login_required
 @child_required
-def add_chore():
-    description = request.form.get('description')
-    amount = request.form.get('amount')
+def submit_chore():
+    chore_type_id = request.form.get('chore_type_id')
+    notes = request.form.get('notes', '')
     
-    if description and amount:
-        try:
-            chore = Chore(user_id=current_user.id, description=description, amount=float(amount))
-            db.session.add(chore)
-            db.session.commit()
-            flash('Chore added successfully!')
-        except ValueError:
-            flash('Invalid amount')
-    else:
-        flash('Please fill all fields')
+    if not chore_type_id:
+        flash('Please select a chore')
+        return redirect(url_for('child_dashboard'))
     
+    chore_type = ChoreType.query.get_or_404(chore_type_id)
+    
+    if not chore_type.active:
+        flash('This chore is no longer available')
+        return redirect(url_for('child_dashboard'))
+    
+    # Check daily limit
+    today = date.today()
+    today_weekday = today.weekday()
+    db_weekday = (today_weekday + 1) % 7
+    
+    limit = chore_type.get_limit_for_day(db_weekday)
+    
+    if limit > 0:  # 0 means unlimited
+        today_submissions = ChoreSubmission.query.filter(
+            ChoreSubmission.user_id == current_user.id,
+            ChoreSubmission.chore_type_id == chore_type.id,
+            func.date(ChoreSubmission.date_submitted) == today
+        ).count()
+        
+        if today_submissions >= limit:
+            flash(f'You have already submitted the maximum number of "{chore_type.name}" chores for today.')
+            return redirect(url_for('child_dashboard'))
+    
+    # Create submission
+    submission = ChoreSubmission(
+        user_id=current_user.id,
+        chore_type_id=chore_type.id,
+        notes=notes
+    )
+    db.session.add(submission)
+    db.session.commit()
+    
+    flash(f'Chore "{chore_type.name}" submitted! Waiting for parent approval.')
     return redirect(url_for('child_dashboard'))
 
 # Parent Routes
@@ -160,12 +254,21 @@ def parent_dashboard():
         flash('No child account found')
         return render_template('parent_dashboard.html', child=None)
     
-    # Get pending chores
-    pending_chores = Chore.query.filter_by(user_id=child.id, status='pending').order_by(Chore.date_created.desc()).all()
-    approved_chores = Chore.query.filter_by(user_id=child.id, status='approved').order_by(Chore.date_approved.desc()).all()
+    # Get pending submissions
+    pending_submissions = ChoreSubmission.query.filter_by(
+        user_id=child.id, 
+        status='pending'
+    ).order_by(ChoreSubmission.date_submitted.desc()).all()
+    
+    # Get approved submissions
+    approved_submissions = ChoreSubmission.query.filter_by(
+        user_id=child.id,
+        status='approved'
+    ).order_by(ChoreSubmission.date_approved.desc()).limit(20).all()
     
     # Calculate balances
-    approved_earnings = sum(chore.amount for chore in approved_chores)
+    all_approved = ChoreSubmission.query.filter_by(user_id=child.id, status='approved').all()
+    approved_earnings = sum(sub.chore_type.value for sub in all_approved)
     
     # Get fines
     fines = Transaction.query.filter_by(user_id=child.id, type='fine').all()
@@ -180,28 +283,119 @@ def parent_dashboard():
     
     current_balance = approved_earnings - total_fines - total_payments
     
+    # Get all chore types for management
+    chore_types = ChoreType.query.order_by(ChoreType.name).all()
+    
     return render_template('parent_dashboard.html',
                          child=child,
-                         pending_chores=pending_chores,
-                         approved_chores=approved_chores,
+                         pending_submissions=pending_submissions,
+                         approved_submissions=approved_submissions,
                          transactions=transactions,
                          current_balance=current_balance,
-                         total_payments=total_payments)
+                         total_payments=total_payments,
+                         chore_types=chore_types)
 
-@app.route('/parent/approve_chore/<int:chore_id>', methods=['POST'])
+@app.route('/parent/chore_types')
 @login_required
 @parent_required
-def approve_chore(chore_id):
-    chore = Chore.query.get_or_404(chore_id)
-    chore.status = 'approved'
-    chore.date_approved = datetime.utcnow()
+def manage_chore_types():
+    chore_types = ChoreType.query.order_by(ChoreType.name).all()
+    return render_template('manage_chore_types.html', chore_types=chore_types)
+
+@app.route('/parent/add_chore_type', methods=['POST'])
+@login_required
+@parent_required
+def add_chore_type():
+    name = request.form.get('name')
+    description = request.form.get('description')
+    value = request.form.get('value')
+    
+    # Get day limits
+    sunday = int(request.form.get('sunday', 0))
+    monday = int(request.form.get('monday', 0))
+    tuesday = int(request.form.get('tuesday', 0))
+    wednesday = int(request.form.get('wednesday', 0))
+    thursday = int(request.form.get('thursday', 0))
+    friday = int(request.form.get('friday', 0))
+    saturday = int(request.form.get('saturday', 0))
+    
+    if not all([name, description, value]):
+        flash('Please fill all required fields')
+        return redirect(url_for('manage_chore_types'))
+    
+    try:
+        chore_type = ChoreType(
+            name=name,
+            description=description,
+            value=float(value),
+            sunday_limit=sunday,
+            monday_limit=monday,
+            tuesday_limit=tuesday,
+            wednesday_limit=wednesday,
+            thursday_limit=thursday,
+            friday_limit=friday,
+            saturday_limit=saturday
+        )
+        db.session.add(chore_type)
+        db.session.commit()
+        flash(f'Chore type "{name}" created successfully!')
+    except ValueError:
+        flash('Invalid value amount')
+    
+    return redirect(url_for('manage_chore_types'))
+
+@app.route('/parent/edit_chore_type/<int:chore_type_id>', methods=['POST'])
+@login_required
+@parent_required
+def edit_chore_type(chore_type_id):
+    chore_type = ChoreType.query.get_or_404(chore_type_id)
+    
+    chore_type.name = request.form.get('name', chore_type.name)
+    chore_type.description = request.form.get('description', chore_type.description)
+    
+    try:
+        chore_type.value = float(request.form.get('value', chore_type.value))
+        chore_type.sunday_limit = int(request.form.get('sunday', chore_type.sunday_limit))
+        chore_type.monday_limit = int(request.form.get('monday', chore_type.monday_limit))
+        chore_type.tuesday_limit = int(request.form.get('tuesday', chore_type.tuesday_limit))
+        chore_type.wednesday_limit = int(request.form.get('wednesday', chore_type.wednesday_limit))
+        chore_type.thursday_limit = int(request.form.get('thursday', chore_type.thursday_limit))
+        chore_type.friday_limit = int(request.form.get('friday', chore_type.friday_limit))
+        chore_type.saturday_limit = int(request.form.get('saturday', chore_type.saturday_limit))
+        
+        db.session.commit()
+        flash(f'Chore type "{chore_type.name}" updated successfully!')
+    except ValueError:
+        flash('Invalid values provided')
+    
+    return redirect(url_for('manage_chore_types'))
+
+@app.route('/parent/toggle_chore_type/<int:chore_type_id>', methods=['POST'])
+@login_required
+@parent_required
+def toggle_chore_type(chore_type_id):
+    chore_type = ChoreType.query.get_or_404(chore_type_id)
+    chore_type.active = not chore_type.active
+    db.session.commit()
+    
+    status = 'activated' if chore_type.active else 'deactivated'
+    flash(f'Chore type "{chore_type.name}" {status}')
+    return redirect(url_for('manage_chore_types'))
+
+@app.route('/parent/approve_submission/<int:submission_id>', methods=['POST'])
+@login_required
+@parent_required
+def approve_submission(submission_id):
+    submission = ChoreSubmission.query.get_or_404(submission_id)
+    submission.status = 'approved'
+    submission.date_approved = datetime.utcnow()
     
     # Create transaction record
     transaction = Transaction(
-        user_id=chore.user_id,
+        user_id=submission.user_id,
         type='chore',
-        description=f'Approved: {chore.description}',
-        amount=chore.amount
+        description=f'Approved: {submission.chore_type.name}',
+        amount=submission.chore_type.value
     )
     db.session.add(transaction)
     db.session.commit()
