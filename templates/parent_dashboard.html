@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Parent Dashboard{% endblock %}
+
+{% block header %}Parent Dashboard{% endblock %}
+
+{% block content %}
+{% if child %}
+<div class="stats">
+    <div class="stat-card">
+        <h3>${{ "%.2f"|format(current_balance) }}</h3>
+        <p>Amount Owed to {{ child.username }}</p>
+    </div>
+    <div class="stat-card">
+        <h3>${{ "%.2f"|format(total_payments) }}</h3>
+        <p>Total Paid</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Pending Chores (Need Approval)</h2>
+    {% if pending_chores %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chore in pending_chores %}
+            <tr>
+                <td>{{ chore.date_created.strftime('%m/%d/%Y') }}</td>
+                <td>{{ chore.description }}</td>
+                <td>${{ "%.2f"|format(chore.amount) }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('approve_chore', chore_id=chore.id) }}"
+                        style="display: inline;">
+                        <button type="submit" class="btn btn-success">Approve</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pending chores to approve.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Add a Fine</h2>
+    <form method="POST" action="{{ url_for('add_fine') }}">
+        <div class="form-group">
+            <label for="description">Reason for fine</label>
+            <input type="text" id="description" name="description" placeholder="e.g., Didn't clean room" required>
+        </div>
+
+        <div class="form-group">
+            <label for="amount">Fine amount ($)</label>
+            <input type="number" id="amount" name="amount" step="0.01" min="0" placeholder="2.00" required>
+        </div>
+
+        <button type="submit" class="btn btn-danger">Add Fine</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Record a Payment</h2>
+    <form method="POST" action="{{ url_for('add_payment') }}">
+        <div class="form-group">
+            <label for="amount">Payment amount ($)</label>
+            <input type="number" id="amount" name="amount" step="0.01" min="0" placeholder="10.00" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Record Payment</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Approved Chores</h2>
+    {% if approved_chores %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date Completed</th>
+                <th>Date Approved</th>
+                <th>Description</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chore in approved_chores %}
+            <tr>
+                <td>{{ chore.date_created.strftime('%m/%d/%Y') }}</td>
+                <td>{{ chore.date_approved.strftime('%m/%d/%Y') if chore.date_approved else 'N/A' }}</td>
+                <td>{{ chore.description }}</td>
+                <td>${{ "%.2f"|format(chore.amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No approved chores yet.</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Transaction History</h2>
+    {% if transactions %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transaction in transactions %}
+            <tr>
+                <td>{{ transaction.date.strftime('%m/%d/%Y %H:%M') }}</td>
+                <td>
+                    {% if transaction.type == 'chore' %}
+                    <span style="color: #28a745;">✓ Chore</span>
+                    {% elif transaction.type == 'fine' %}
+                    <span style="color: #dc3545;">⚠ Fine</span>
+                    {% else %}
+                    <span style="color: #667eea;">💵 Payment</span>
+                    {% endif %}
+                </td>
+                <td>{{ transaction.description }}</td>
+                <td>
+                    {% if transaction.type == 'chore' %}
+                    <span style="color: #28a745;">+${{ "%.2f"|format(transaction.amount) }}</span>
+                    {% elif transaction.type == 'fine' %}
+                    <span style="color: #dc3545;">-${{ "%.2f"|format(transaction.amount) }}</span>
+                    {% else %}
+                    <span style="color: #667eea;">-${{ "%.2f"|format(transaction.amount) }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No transactions yet.</p>
+    {% endif %}
+</div>
+
+{% else %}
+<div class="card">
+    <p>No child account found. Please create one first.</p>
+</div>
+{% endif %}
+{% endblock %}

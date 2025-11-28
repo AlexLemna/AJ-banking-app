@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}My Chores{% endblock %}
+
+{% block header %}My Chores{% endblock %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat-card">
+        <h3>${{ "%.2f"|format(pending_earnings) }}</h3>
+        <p>Pending Earnings</p>
+    </div>
+    <div class="stat-card">
+        <h3>${{ "%.2f"|format(balance) }}</h3>
+        <p>Current Balance</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Add a Chore</h2>
+    <form method="POST" action="{{ url_for('add_chore') }}">
+        <div class="form-group">
+            <label for="description">What did you do?</label>
+            <input type="text" id="description" name="description" placeholder="e.g., Cleaned my room" required>
+        </div>
+
+        <div class="form-group">
+            <label for="amount">How much should you earn? ($)</label>
+            <input type="number" id="amount" name="amount" step="0.01" min="0" placeholder="5.00" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Add Chore</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>My Chores</h2>
+    {% if chores %}
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for chore in chores %}
+            <tr>
+                <td>{{ chore.date_created.strftime('%m/%d/%Y') }}</td>
+                <td>{{ chore.description }}</td>
+                <td>${{ "%.2f"|format(chore.amount) }}</td>
+                <td>
+                    {% if chore.status == 'pending' %}
+                    <span class="status-pending">⏳ Pending</span>
+                    {% else %}
+                    <span class="status-approved">✓ Approved</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No chores recorded yet. Add one above to get started!</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Balance Breakdown</h2>
+    <table>
+        <tr>
+            <td><strong>Approved Earnings:</strong></td>
+            <td style="text-align: right;">${{ "%.2f"|format(approved_earnings) }}</td>
+        </tr>
+        <tr>
+            <td><strong>Fines:</strong></td>
+            <td style="text-align: right; color: #dc3545;">-${{ "%.2f"|format(total_fines) }}</td>
+        </tr>
+        <tr style="border-top: 2px solid #667eea;">
+            <td><strong>Current Balance:</strong></td>
+            <td style="text-align: right; font-size: 1.2em; color: #667eea;"><strong>${{ "%.2f"|format(balance)
+                    }}</strong></td>
+        </tr>
+    </table>
+</div>
+{% endblock %}
