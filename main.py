@@ -644,6 +644,68 @@ def submit_chore():
     return redirect(url_for("child_dashboard"))
 
 
+# ----------------------------------------------------------------------------
+# EDIT SUBMISSION - Allow child to edit notes on pending submissions
+# ----------------------------------------------------------------------------
+@app.route("/child/edit_submission/<int:submission_id>", methods=["POST"])
+@login_required
+@child_required
+def edit_submission(submission_id):
+    # Get the submission from the database
+    submission = ChoreSubmission.query.get_or_404(submission_id)
+
+    # Security check: make sure this submission belongs to the current user
+    if submission.user_id != current_user.id:
+        flash("You can only edit your own submissions")
+        return redirect(url_for("child_dashboard"))
+
+    # Only allow editing pending submissions
+    if submission.status != "pending":
+        flash("You can only edit pending submissions")
+        return redirect(url_for("child_dashboard"))
+
+    # Update the notes
+    notes = request.form.get("notes", "").strip()
+    submission.notes = notes if notes else None
+
+    # Save changes
+    db.session.commit()
+
+    flash(f'Updated notes for "{submission.chore_type.name}"')
+    return redirect(url_for("child_dashboard"))
+
+
+# ----------------------------------------------------------------------------
+# DELETE SUBMISSION - Allow child to delete pending submissions
+# ----------------------------------------------------------------------------
+@app.route("/child/delete_submission/<int:submission_id>", methods=["POST"])
+@login_required
+@child_required
+def delete_submission(submission_id):
+    # Get the submission from the database
+    submission = ChoreSubmission.query.get_or_404(submission_id)
+
+    # Security check: make sure this submission belongs to the current user
+    if submission.user_id != current_user.id:
+        flash("You can only delete your own submissions")
+        return redirect(url_for("child_dashboard"))
+
+    # Only allow deleting pending submissions
+    if submission.status != "pending":
+        flash("You can only delete pending submissions")
+        return redirect(url_for("child_dashboard"))
+
+    # Store the chore name for the success message
+    chore_name = submission.chore_type.name
+
+    # Delete the submission
+    db.session.delete(submission)
+    db.session.commit()
+
+    flash(f'Deleted submission for "{chore_name}"')
+    return redirect(url_for("child_dashboard"))
+
+
 # ============================================================================
 # PARENT ROUTES - Pages and actions for parent accounts
 # ============================================================================
@@ -716,7 +778,7 @@ def parent_dashboard():
     # Sorted by date, newest first
     transactions = (
         Transaction.query.filter_by(user_id=child.id)
-        .order_by(Transaction.date.desc()) # type: ignore[attr-defined]
+        .order_by(Transaction.date.desc())  # type: ignore[attr-defined]
         .all()
     )
 
