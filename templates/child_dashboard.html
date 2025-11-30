@@ -17,76 +17,70 @@
 </div>
 
 <div class="card">
-    <h2>Submit a Chore</h2>
+    <h2>Available Chores - Submit What You've Done</h2>
     {% if chore_types %}
     <form method="POST" action="{{ url_for('submit_chore') }}">
-        <div class="form-group">
-            <label for="chore_type_id">Select Chore</label>
-            <select id="chore_type_id" name="chore_type_id" required
-                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 1em;">
-                <option value="">-- Choose a chore --</option>
+        <table>
+            <thead>
+                <tr>
+                    <th>Chore</th>
+                    <th>Value</th>
+                    <th>Days Available</th>
+                    <th>How Many?</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
                 {% for chore_type in chore_types %}
                 {% set avail = chore_availability[chore_type.id] %}
-                <option value="{{ chore_type.id }}" {% if not avail.can_submit %}disabled{% endif %}>
-                    {{ chore_type.name }} - ${{ "%.2f"|format(chore_type.value) }}
-                    {% if not avail.can_submit %} (Daily limit reached){% elif avail.remaining is not none %} ({{
-                    avail.remaining }} left today){% endif %}
-                </option>
+                <tr>
+                    <td>
+                        <strong>{{ chore_type.name }}</strong><br>
+                        <small style="color: #666;">{{ chore_type.description }}</small>
+                        {% if not avail.can_submit %}
+                        <br><small style="color: #dc3545;">✗ Daily limit reached</small>
+                        {% elif avail.remaining is not none %}
+                        <br><small style="color: #28a745;">{{ avail.remaining }} left today</small>
+                        {% else %}
+                        <br><small style="color: #28a745;">✓ Available</small>
+                        {% endif %}
+                    </td>
+                    <td>${{ "%.2f"|format(chore_type.value) }}</td>
+                    <td>{{ chore_type.get_day_abbreviations() }}</td>
+                    <td>
+                        {% if avail.can_submit %}
+                        {% if avail.remaining == 1 or avail.limit == 1 %}
+                        <input type="checkbox" name="chore_{{ chore_type.id }}_count" value="1"
+                            style="width: 20px; height: 20px; cursor: pointer;">
+                        {% else %}
+                        <input type="number" name="chore_{{ chore_type.id }}_count" min="0"
+                            max="{{ avail.remaining if avail.remaining is not none else 99 }}" value="0"
+                            style="width: 60px; padding: 5px; text-align: center;">
+                        {% endif %}
+                        {% else %}
+                        <span style="color: #999;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if avail.can_submit %}
+                        <textarea name="chore_{{ chore_type.id }}_notes" rows="2" placeholder="Optional notes..."
+                            style="width: 100%; padding: 5px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.9em;"></textarea>
+                        {% else %}
+                        <span style="color: #999;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
                 {% endfor %}
-            </select>
+            </tbody>
+        </table>
+        <div style="margin-top: 20px; text-align: center;">
+            <button type="submit" class="btn btn-primary" style="font-size: 1.1em; padding: 12px 30px;">
+                Submit Selected Chores
+            </button>
         </div>
-
-        <div class="form-group">
-            <label for="notes">Notes (optional)</label>
-            <textarea id="notes" name="notes" rows="3" placeholder="Any additional details about this chore..."
-                style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 1em;"></textarea>
-        </div>
-
-        <button type="submit" class="btn btn-primary">Submit Chore</button>
     </form>
     {% else %}
     <p>No chores available. Ask your parent to add some chore types!</p>
-    {% endif %}
-</div>
-
-<div class="card">
-    <h2>Available Chores</h2>
-    {% if chore_types %}
-    <table>
-        <thead>
-            <tr>
-                <th>Chore</th>
-                <th>Value</th>
-                <th>Days Available</th>
-                <th>Today's Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for chore_type in chore_types %}
-            {% set avail = chore_availability[chore_type.id] %}
-            <tr>
-                <td>
-                    <strong>{{ chore_type.name }}</strong><br>
-                    <small style="color: #666;">{{ chore_type.description }}</small>
-                </td>
-                <td>${{ "%.2f"|format(chore_type.value) }}</td>
-                <td>{{ chore_type.get_day_abbreviations() }}</td>
-                <td>
-                    {% if avail.can_submit %}
-                    <span style="color: #28a745;">✓ Available</span>
-                    {% if avail.remaining is not none %}
-                    <br><small>({{ avail.remaining }} left)</small>
-                    {% endif %}
-                    {% else %}
-                    <span style="color: #dc3545;">✗ Limit reached</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p>No chores available yet.</p>
     {% endif %}
 </div>
 

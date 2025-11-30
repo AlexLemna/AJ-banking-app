@@ -541,47 +541,57 @@ def child_dashboard():
 
 
 # ----------------------------------------------------------------------------
-# SUBMIT CHORE - Handle when a child submits a completed chore
+# SUBMIT CHORE - Handle when a child submits completed chores
 # ----------------------------------------------------------------------------
 @app.route("/child/submit_chore", methods=["POST"])
 @login_required
 @child_required
 def submit_chore():
-    # This route only handles POST requests (form submissions)
-    # It's called when a child clicks "Submit Chore" on their dashboard
-
-    # Get the form data
-    # chore_type_id tells us which type of chore they did
-    chore_type_id = request.form.get("chore_type_id")
-    # notes is optional text they can add
-    notes = request.form.get("notes", "")  # Default to empty string if not provided
-
-    # Validation: Make sure they selected a chore
-    if not chore_type_id:
-        flash("Please select a chore")
-        return redirect(url_for("child_dashboard"))
-
-    # Look up the chore type in the database
-    # .get_or_404() either returns the ChoreType or shows a 404 error if not found
-    chore_type = ChoreType.query.get_or_404(chore_type_id)
-
-    # Make sure the chore is still active (not disabled by parent)
-    if not chore_type.active:
-        flash("This chore is no longer available")
-        return redirect(url_for("child_dashboard"))
-
-    # ---- Check if they've already hit the daily limit ----
+    # This route handles POST requests from the integrated chore submission form
+    # It can process multiple chores submitted at once
 
     # Get today's date and convert weekday format
     today = date.today()
     today_weekday = today.weekday()  # Python: Monday=0
     db_weekday = (today_weekday + 1) % 7  # DB: Sunday=0
 
-    # Get the limit for this chore on this day of the week
-    limit = chore_type.get_limit_for_day(db_weekday)
+    # Get all active chore types
+    chore_types = ChoreType.query.filter_by(active=True).all()
 
-    # Only check limit if it's not 0 (0 means unlimited)
-    if limit > 0:
+    # Track successful submissions
+    submitted_chores = []
+    errors = []
+
+    # Process each chore type
+    for chore_type in chore_types:
+        # Get the count field for this chore (either checkbox or number input)
+        count_field = f"chore_{chore_type.id}_count"
+        count_value = request.form.get(count_field)
+
+        # Skip if no count provided or count is 0
+        if not count_value:
+            continue
+
+        # Handle checkbox (value is "1" string) or number input
+        try:
+            if count_value == "on":  # Checkbox checked
+                count = 1
+            else:
+                count = int(count_value)
+        except ValueError:
+            continue
+
+        # Skip if count is 0 or negative
+        if count <= 0:
+            continue
+
+        # Get the notes for this chore
+        notes_field = f"chore_{chore_type.id}_notes"
+        notes = request.form.get(notes_field, "").strip()
+
+        # ---- Check daily limit for this chore type ----
+        limit = chore_type.get_limit_for_day(db_weekday)
+
         # Count how many times they've already submitted this chore today
         today_submissions = ChoreSubmission.query.filter(
             ChoreSubmission.user_id == current_user.id,
@@ -589,34 +599,48 @@ def submit_chore():
             func.date(ChoreSubmission.date_submitted) == today,
         ).count()
 
-        # If they've already hit the limit, reject the submission
-        if today_submissions >= limit:
-            flash(
-                f'You have already submitted the maximum number of "{chore_type.name}" chores for today.'
+        # Calculate how many more can be submitted
+        if limit > 0:
+            remaining = limit - today_submissions
+            if count > remaining:
+                if remaining > 0:
+                    errors.append(
+                        f"{chore_type.name}: Only {remaining} more allowed today (tried to submit {count})"
+                    )
+                else:
+                    errors.append(f"{chore_type.name}: Daily limit already reached")
+                continue
+
+        # ---- Create submissions for each count ----
+        for i in range(count):
+            submission = ChoreSubmission(
+                user_id=current_user.id,
+                chore_type_id=chore_type.id,
+                notes=notes if notes else None,
             )
-            return redirect(url_for("child_dashboard"))
+            db.session.add(submission)
+            submitted_chores.append(chore_type.name)
 
-    # ---- All checks passed, create the submission ----
+    # Save all submissions to database
+    if submitted_chores:
+        db.session.commit()
+        if len(submitted_chores) == 1:
+            flash(
+                f'Chore "{submitted_chores[0]}" submitted! Waiting for parent approval.'
+            )
+        else:
+            flash(
+                f"{len(submitted_chores)} chore(s) submitted! Waiting for parent approval."
+            )
 
-    # Create a new ChoreSubmission object
-    # The __init__ method we defined accepts keyword arguments
-    submission = ChoreSubmission(
-        user_id=current_user.id,  # Who submitted it
-        chore_type_id=chore_type.id,  # What chore type
-        notes=notes,  # Optional notes
-        # status defaults to 'pending'
-        # date_submitted defaults to now
-    )
+    # Show any errors
+    for error in errors:
+        flash(error, "error")
 
-    # Add it to the database session (like staging a commit in git)
-    db.session.add(submission)
+    # If nothing was submitted and no errors, show a message
+    if not submitted_chores and not errors:
+        flash("Please select at least one chore to submit.")
 
-    # Commit the transaction (actually save to database)
-    # This is when the data is permanently written to the database file
-    db.session.commit()
-
-    # Show success message and redirect back to dashboard
-    flash(f'Chore "{chore_type.name}" submitted! Waiting for parent approval.')
     return redirect(url_for("child_dashboard"))
 
 
@@ -655,7 +679,7 @@ def parent_dashboard():
             user_id=child.id,  # Only this child's submissions
             status="pending",  # Only ones waiting for approval
         )
-        .order_by(ChoreSubmission.date_submitted.desc())
+        .order_by(ChoreSubmission.date_submitted.desc())  # type: ignore[attr-defined]
         .all()
     )  # type: ignore[attr-defined]  # Newest first
 
@@ -664,7 +688,7 @@ def parent_dashboard():
     # .limit(20) restricts the query to only return 20 rows
     approved_submissions = (
         ChoreSubmission.query.filter_by(user_id=child.id, status="approved")
-        .order_by(ChoreSubmission.date_approved.desc())
+        .order_by(ChoreSubmission.date_approved.desc())  # type: ignore[attr-defined]
         .limit(20)
         .all()
     )  # type: ignore[attr-defined]
@@ -690,7 +714,11 @@ def parent_dashboard():
     # ---- Get all transactions for history ----
     # This includes chores, fines, and payments
     # Sorted by date, newest first
-    transactions = Transaction.query.filter_by(user_id=child.id).order_by(Transaction.date.desc()).all()  # type: ignore[attr-defined]
+    transactions = (
+        Transaction.query.filter_by(user_id=child.id)
+        .order_by(Transaction.date.desc()) # type: ignore[attr-defined]
+        .all()
+    )
 
     # ---- Calculate current balance ----
     # Balance = money earned - fines - payments already made
